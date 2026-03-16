@@ -2,7 +2,11 @@
 
 import re
 import torch
-import deepspeed
+from transformers.integrations.deepspeed import is_deepspeed_available
+
+if is_deepspeed_available():
+    import deepspeed
+
 from trainer.unlearn.grad_diff import GradDiff
 
 
