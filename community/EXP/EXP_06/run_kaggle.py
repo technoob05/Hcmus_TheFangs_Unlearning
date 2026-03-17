@@ -69,10 +69,13 @@ MGFAA_CONFIGS = [
 ]
 
 # ── Inline MGFAA code (fallback for standalone Kaggle) ──────
-MGFAA_TRAINER_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "trainer.py"
-)
+try:
+    MGFAA_TRAINER_PATH = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "trainer.py"
+    )
+except NameError:
+    MGFAA_TRAINER_PATH = ""  # notebook context → will use inline MGFAA_CODE
 
 MGFAA_CODE = r'''
 import logging

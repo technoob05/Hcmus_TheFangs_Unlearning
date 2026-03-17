@@ -88,12 +88,14 @@ COMPARISON_METHODS = [
 ]
 
 # ── Nội dung trainer.py (ER-BWP) — đọc từ file cùng thư mục ─
-# Khi upload lên Kaggle, dán nội dung trainer.py vào ERBWP_CODE bên dưới
-# HOẶC để script tự đọc nếu chạy từ local → Kaggle via dataset
-ERBWP_TRAINER_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "trainer.py"
-)
+# Khi chạy trong Kaggle notebook, __file__ không tồn tại → dùng inline code
+try:
+    ERBWP_TRAINER_PATH = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "trainer.py"
+    )
+except NameError:
+    ERBWP_TRAINER_PATH = ""  # notebook context → will use inline ERBWP_CODE
 
 # Fallback: inline code nếu file không tồn tại (khi chạy standalone trên Kaggle)
 ERBWP_CODE = r'''

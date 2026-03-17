@@ -58,10 +58,13 @@ CSAES_CONFIGS = [
 ]
 
 # ── Inline CSAES trainer code (fallback for standalone Kaggle) ──
-CSAES_TRAINER_PATH = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)),
-    "trainer.py"
-)
+try:
+    CSAES_TRAINER_PATH = os.path.join(
+        os.path.dirname(os.path.abspath(__file__)),
+        "trainer.py"
+    )
+except NameError:
+    CSAES_TRAINER_PATH = ""  # notebook context → will use inline CSAES_CODE
 
 CSAES_CODE = r'''
 import logging
