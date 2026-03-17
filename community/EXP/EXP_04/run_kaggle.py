@@ -439,3 +439,116 @@ SO SÁNH:
 Target: ERBWP_lmax0.5 vượt SimNPO về model_utility trong khi giữ
 được forgetting quality tương đương.
 """)
+
+# ══════════════════════════════════════════════════════════════
+#  VISUALIZATION — Paper-ready output
+# ══════════════════════════════════════════════════════════════
+import json as _json
+
+def _load_metrics04(repo_dir, task_name):
+    path = os.path.join(repo_dir, "saves", "eval", f"{task_name}_eval", "TOFU_EVAL.json")
+    if not os.path.exists(path):
+        return {}
+    with open(path) as f:
+        raw = _json.load(f)
+    flat = {}
+    def _flatten(d, prefix=""):
+        for k, v in d.items():
+            if isinstance(v, dict): _flatten(v, prefix + k + ".")
+            else: flat[prefix + k] = v
+    _flatten(raw)
+    key_map = {
+        "model_utility": ["model_utility", "utility"],
+        "forget_quality": ["forget_quality", "forget_qual"],
+        "privleak": ["privleak", "privacy_leakage"],
+        "extraction_strength": ["extraction_strength", "extraction"],
+    }
+    out = {}
+    for pk, cands in key_map.items():
+        for c in cands:
+            for k, v in flat.items():
+                if c.lower() in k.lower() and isinstance(v, (int, float)):
+                    out[pk] = round(float(v), 4); break
+            if pk in out: break
+    return out
+
+metrics_map = {label: _load_metrics04(REPO_DIR, task) for label, task in results.items()}
+
+# ── ASCII table ───────────────────────────────────────────────
+_COL_W = [30, 15, 15, 12, 20, 12]
+_HEADERS = ["Method", "model_utility", "forget_quality", "privleak", "extraction_strength", "Composite"]
+_SEP = "+" + "+".join("-" * w for w in _COL_W) + "+"
+print("\n" + "=" * 106)
+print("  EXP_04 — ER-BWP Novel Method: Results")
+print("=" * 106)
+print(_SEP)
+print("|" + "|".join(f" {h:<{_COL_W[i]-1}}" for i, h in enumerate(_HEADERS)) + "|")
+print(_SEP)
+for label, m in metrics_map.items():
+    mu=m.get("model_utility",float("nan")); fq=m.get("forget_quality",float("nan"))
+    pl=m.get("privleak",float("nan")); es=m.get("extraction_strength",float("nan"))
+    comp = 0.4*(mu if mu==mu else 0)+0.4*(fq if fq==fq else 0)-0.1*abs(pl if pl==pl else 0)-0.1*(es if es==es else 0)
+    row = [label, f"{mu:.4f}", f"{fq:.4f}", f"{pl:.2f}", f"{es:.4f}", f"{comp:.4f}"]
+    print("|" + "|".join(f" {v:<{_COL_W[i]-1}}" for i, v in enumerate(row)) + "|")
+print(_SEP)
+
+print("\n% LATEX TABLE ROWS (EXP_04):")
+for label, m in metrics_map.items():
+    mu=m.get("model_utility",float("nan")); fq=m.get("forget_quality",float("nan"))
+    pl=m.get("privleak",float("nan")); es=m.get("extraction_strength",float("nan"))
+    print(f"ER-BWP ({label.replace('_', chr(92)+'_')}) & {mu:.4f} & {fq:.4f} & {pl:.2f} & {es:.4f} \\\\")
+
+try:
+    import matplotlib; matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    # Radar chart
+    _labels4 = ["Model\nUtility", "Forget\nQuality", "Privacy\n(1-|pl|/100)", "Extraction\nResist."]
+    _ang = np.linspace(0, 2*np.pi, 4, endpoint=False).tolist(); _ang += _ang[:1]
+    fig, ax = plt.subplots(figsize=(7, 7), subplot_kw=dict(polar=True))
+    _colors = plt.cm.tab10.colors
+    for ci, (lbl, m) in enumerate(metrics_map.items()):
+        mu=m.get("model_utility",0.5); fq=m.get("forget_quality",0.5)
+        pl=m.get("privleak",0); es=m.get("extraction_strength",0.5)
+        vals = [min(max(mu,0),1), min(max(fq,0),1), min(max(1-abs(pl)/100,0),1), min(max(1-es,0),1)]
+        vals += vals[:1]
+        # Highlight ERBWP_lmax0.5_d1.0 (recommended) with thicker line
+        lw = 3.5 if "lmax0.5_d1" in lbl else 2
+        ax.plot(_ang, vals, "o-", linewidth=lw, color=_colors[ci%10], label=lbl)
+        ax.fill(_ang, vals, alpha=0.1, color=_colors[ci%10])
+    ax.set_xticks(_ang[:-1]); ax.set_xticklabels(_labels4, size=11)
+    ax.set_ylim(0, 1); ax.grid(True, linestyle="--", alpha=0.5)
+    plt.legend(loc="upper right", bbox_to_anchor=(1.45, 1.15), fontsize=8)
+    plt.title("EXP_04 — ER-BWP Lambda Sweep\n(Novel Method: entropy reservoir)", size=12, pad=20)
+    plt.tight_layout()
+    plt.savefig("/kaggle/working/EXP_04_radar.png", dpi=150, bbox_inches="tight")
+    plt.close(); print("[VIZ] Radar chart → /kaggle/working/EXP_04_radar.png")
+
+    # Lambda sensitivity: group ERBWP by lambda_max, plot utility & forget_quality
+    erbwp_data = {k: v for k, v in metrics_map.items() if k.startswith("ERBWP_")}
+    _labs = list(erbwp_data.keys()); _x = np.arange(len(_labs))
+    fig, axes = plt.subplots(1, 2, figsize=(12, 4))
+    for ax, mkey, mtitle, color in zip(axes,
+            ["model_utility", "forget_quality"],
+            ["Model Utility ↑", "Forget Quality ↑"],
+            ["#4CAF50", "#2196F3"]):
+        vals = [erbwp_data[l].get(mkey, float("nan")) for l in _labs]
+        bars = ax.bar(_x, vals, color=color, width=0.6, edgecolor="black", alpha=0.85)
+        for b, v in zip(bars, vals):
+            if v == v: ax.text(b.get_x()+b.get_width()/2., v+0.005, f"{v:.3f}", ha="center", va="bottom", fontsize=9)
+        ax.set_xticks(_x); ax.set_xticklabels(_labs, rotation=30, ha="right", fontsize=8)
+        ax.set_title(f"ER-BWP Lambda Sweep: {mtitle}", fontweight="bold")
+        ax.grid(axis="y", linestyle="--", alpha=0.3)
+    plt.tight_layout()
+    plt.savefig("/kaggle/working/EXP_04_lambda_sensitivity.png", dpi=150, bbox_inches="tight")
+    plt.close(); print("[VIZ] Lambda sensitivity → /kaggle/working/EXP_04_lambda_sensitivity.png")
+except Exception as e:
+    print(f"[VIZ] Visualization skipped: {e}")
+
+_out_path = os.path.join(REPO_DIR, "saves", "eval", "EXP_04_results.json")
+os.makedirs(os.path.dirname(_out_path), exist_ok=True)
+with open(_out_path, "w") as f:
+    _json.dump(metrics_map, f, indent=2)
+print(f"[JSON] Results → {_out_path}")
+print("\n[EXP_04] Paper output complete.")

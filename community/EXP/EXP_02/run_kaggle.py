@@ -216,3 +216,119 @@ PHÂN TÍCH:
   Nếu sequential = direct → NPO đủ robust cho sequential setting.
   Reference: PreRound_1.md — "non-geodesic drift and error accumulation"
 """)
+
+# ══════════════════════════════════════════════════════════════
+#  VISUALIZATION — Degradation analysis across sequential steps
+# ══════════════════════════════════════════════════════════════
+import json as _json
+
+def _load_metrics_seq(repo_dir, task_name):
+    path = os.path.join(repo_dir, "saves", "eval", f"{task_name}_eval", "TOFU_EVAL.json")
+    if not os.path.exists(path):
+        return {}
+    with open(path) as f:
+        raw = _json.load(f)
+    flat = {}
+    def _flatten(d, prefix=""):
+        for k, v in d.items():
+            if isinstance(v, dict): _flatten(v, prefix + k + ".")
+            else: flat[prefix + k] = v
+    _flatten(raw)
+    key_map = {
+        "model_utility": ["model_utility", "utility"],
+        "forget_quality": ["forget_quality", "forget_qual"],
+        "privleak": ["privleak", "privacy_leakage"],
+        "extraction_strength": ["extraction_strength", "extraction"],
+    }
+    out = {}
+    for pk, cands in key_map.items():
+        for c in cands:
+            for k, v in flat.items():
+                if c.lower() in k.lower() and isinstance(v, (int, float)):
+                    out[pk] = round(float(v), 4); break
+            if pk in out: break
+    return out
+
+# Build ordered list: step1 → step2 → step3
+step_labels = list(sequential_results.keys())
+step_task_names = []
+for sk in step_labels:
+    # Reconstruct task name from eval_dir "saves/eval/{task_name}_eval/"
+    ed = sequential_results[sk]["eval_dir"]  # e.g. "saves/eval/tofu_..._eval/"
+    tn = ed.replace("saves/eval/", "").rstrip("/").rstrip("_eval")
+    step_task_names.append(tn)
+
+seq_metrics = {}
+for sk, tn in zip(step_labels, step_task_names):
+    seq_metrics[sk] = _load_metrics_seq(REPO_DIR, tn)
+
+# ── ASCII table ───────────────────────────────────────────────
+_COL_W = [32, 15, 15, 12, 20, 12]
+_SEP = "+" + "+".join("-" * w for w in _COL_W) + "+"
+_HEADERS = ["Step", "model_utility", "forget_quality", "privleak", "extraction_strength", "Composite"]
+print("\n" + "=" * 108)
+print("  EXP_02 — Sequential Chain: Metric Degradation")
+print("=" * 108)
+print(_SEP)
+print("|" + "|".join(f" {h:<{_COL_W[i]-1}}" for i, h in enumerate(_HEADERS)) + "|")
+print(_SEP)
+for lbl, m in seq_metrics.items():
+    mu=m.get("model_utility",float("nan")); fq=m.get("forget_quality",float("nan"))
+    pl=m.get("privleak",float("nan")); es=m.get("extraction_strength",float("nan"))
+    comp = 0.4*(mu if mu==mu else 0)+0.4*(fq if fq==fq else 0)-0.1*abs(pl if pl==pl else 0)-0.1*(es if es==es else 0)
+    row = [lbl, f"{mu:.4f}", f"{fq:.4f}", f"{pl:.2f}", f"{es:.4f}", f"{comp:.4f}"]
+    print("|" + "|".join(f" {v:<{_COL_W[i]-1}}" for i, v in enumerate(row)) + "|")
+print(_SEP)
+
+# ── Line chart: metric degradation across steps ───────────────
+try:
+    import matplotlib; matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    _mkeys = ["model_utility", "forget_quality", "privleak", "extraction_strength"]
+    _mtitles = ["Model Utility ↑", "Forget Quality ↑", "PrivLeak ↓", "Extraction ↓"]
+    _xlabels = list(seq_metrics.keys())
+    _x = np.arange(len(_xlabels))
+
+    fig, axes = plt.subplots(1, 4, figsize=(20, 4))
+    for ax, mkey, mtitle in zip(axes, _mkeys, _mtitles):
+        vals = [seq_metrics[l].get(mkey, float("nan")) for l in _xlabels]
+        ax.plot(_x, vals, "o-", linewidth=2.5, color="#2196F3", markersize=9)
+        for i, v in enumerate(vals):
+            if v == v: ax.text(i, v+0.01, f"{v:.3f}", ha="center", va="bottom", fontsize=9, fontweight="bold")
+        ax.set_xticks(_x); ax.set_xticklabels(_xlabels, rotation=25, ha="right", fontsize=8)
+        ax.set_title(mtitle, fontsize=10, fontweight="bold"); ax.grid(linestyle="--", alpha=0.4)
+    plt.suptitle("EXP_02 — Sequential Unlearning: Metric Degradation per Step", fontsize=12, fontweight="bold")
+    plt.tight_layout()
+    plt.savefig("/kaggle/working/EXP_02_sequential_degradation.png", dpi=150, bbox_inches="tight")
+    plt.close(); print("[VIZ] Degradation chart → /kaggle/working/EXP_02_sequential_degradation.png")
+
+    # Radar chart
+    _labels4 = ["Model\nUtility", "Forget\nQuality", "Privacy\n(1-|pl|/100)", "Extraction\nResist."]
+    _ang = np.linspace(0, 2*np.pi, 4, endpoint=False).tolist(); _ang += _ang[:1]
+    fig, ax = plt.subplots(figsize=(7, 7), subplot_kw=dict(polar=True))
+    _clrs = plt.cm.cool(np.linspace(0.2, 0.9, len(seq_metrics)))
+    for ci, (lbl, m) in enumerate(seq_metrics.items()):
+        mu=m.get("model_utility",0.5); fq=m.get("forget_quality",0.5)
+        pl=m.get("privleak",0); es=m.get("extraction_strength",0.5)
+        vals = [min(max(mu,0),1), min(max(fq,0),1), min(max(1-abs(pl)/100,0),1), min(max(1-es,0),1)]
+        vals += vals[:1]
+        ax.plot(_ang, vals, "o-", linewidth=2, color=_clrs[ci], label=lbl)
+        ax.fill(_ang, vals, alpha=0.1, color=_clrs[ci])
+    ax.set_xticks(_ang[:-1]); ax.set_xticklabels(_labels4, size=10)
+    ax.set_ylim(0, 1); ax.grid(True, linestyle="--", alpha=0.5)
+    plt.legend(loc="upper right", bbox_to_anchor=(1.38, 1.15), fontsize=9)
+    plt.title("EXP_02 — Sequential Chain Radar\n(step1→step2→step3)", size=12, pad=20)
+    plt.tight_layout()
+    plt.savefig("/kaggle/working/EXP_02_radar.png", dpi=150, bbox_inches="tight")
+    plt.close(); print("[VIZ] Radar chart → /kaggle/working/EXP_02_radar.png")
+except Exception as e:
+    print(f"[VIZ] Visualization skipped: {e}")
+
+_out_path = os.path.join(REPO_DIR, "saves", "eval", "EXP_02_results.json")
+os.makedirs(os.path.dirname(_out_path), exist_ok=True)
+with open(_out_path, "w") as f:
+    _json.dump(seq_metrics, f, indent=2)
+print(f"[JSON] Results → {_out_path}")
+print("\n[EXP_02] Paper output complete.")

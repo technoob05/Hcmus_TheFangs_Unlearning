@@ -214,3 +214,112 @@ PHÂN TÍCH SO SÁNH:
   Reference: PreRound_2.md — BWGP "weight-centric → representation-centric"
   Reference: PreRound_2.md — LANCET/SCRUB influence function approach
 """)
+
+# ══════════════════════════════════════════════════════════════
+#  VISUALIZATION — Paper-ready output
+# ══════════════════════════════════════════════════════════════
+import json as _json
+
+def _load_metrics03(repo_dir, task_name):
+    path = os.path.join(repo_dir, "saves", "eval", f"{task_name}_eval", "TOFU_EVAL.json")
+    if not os.path.exists(path):
+        return {}
+    with open(path) as f:
+        raw = _json.load(f)
+    flat = {}
+    def _flatten(d, prefix=""):
+        for k, v in d.items():
+            if isinstance(v, dict): _flatten(v, prefix + k + ".")
+            else: flat[prefix + k] = v
+    _flatten(raw)
+    key_map = {
+        "model_utility": ["model_utility", "utility"],
+        "forget_quality": ["forget_quality", "forget_qual"],
+        "privleak": ["privleak", "privacy_leakage"],
+        "extraction_strength": ["extraction_strength", "extraction"],
+    }
+    out = {}
+    for pk, cands in key_map.items():
+        for c in cands:
+            for k, v in flat.items():
+                if c.lower() in k.lower() and isinstance(v, (int, float)):
+                    out[pk] = round(float(v), 4); break
+            if pk in out: break
+    return out
+
+metrics_map = {method: _load_metrics03(REPO_DIR, task) for method, task in results.items()}
+
+# ── ASCII table ───────────────────────────────────────────────
+_COL_W = [26, 15, 15, 12, 20, 12]
+_HEADERS = ["Method", "model_utility", "forget_quality", "privleak", "extraction_strength", "Composite"]
+_SEP = "+" + "+".join("-" * w for w in _COL_W) + "+"
+print("\n" + "=" * 102)
+print("  EXP_03 — Geometry-Aware Methods (WGA / UNDIAL / DPO)")
+print("=" * 102)
+print(_SEP)
+print("|" + "|".join(f" {h:<{_COL_W[i]-1}}" for i, h in enumerate(_HEADERS)) + "|")
+print(_SEP)
+for label, m in metrics_map.items():
+    mu=m.get("model_utility",float("nan")); fq=m.get("forget_quality",float("nan"))
+    pl=m.get("privleak",float("nan")); es=m.get("extraction_strength",float("nan"))
+    comp = 0.4*(mu if mu==mu else 0)+0.4*(fq if fq==fq else 0)-0.1*abs(pl if pl==pl else 0)-0.1*(es if es==es else 0)
+    row = [label, f"{mu:.4f}", f"{fq:.4f}", f"{pl:.2f}", f"{es:.4f}", f"{comp:.4f}"]
+    print("|" + "|".join(f" {v:<{_COL_W[i]-1}}" for i, v in enumerate(row)) + "|")
+print(_SEP)
+
+print("\n% LATEX TABLE ROWS (EXP_03):")
+for label, m in metrics_map.items():
+    mu=m.get("model_utility",float("nan")); fq=m.get("forget_quality",float("nan"))
+    pl=m.get("privleak",float("nan")); es=m.get("extraction_strength",float("nan"))
+    print(f"{label.replace('_', chr(92)+'_')} & {mu:.4f} & {fq:.4f} & {pl:.2f} & {es:.4f} \\\\")
+
+try:
+    import matplotlib; matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    import numpy as np
+
+    _labels4 = ["Model\nUtility", "Forget\nQuality", "Privacy\n(1-|pl|/100)", "Extraction\nResist."]
+    _ang = np.linspace(0, 2*np.pi, 4, endpoint=False).tolist(); _ang += _ang[:1]
+    fig, ax = plt.subplots(figsize=(7, 7), subplot_kw=dict(polar=True))
+    _colors = plt.cm.Set2.colors
+    for ci, (lbl, m) in enumerate(metrics_map.items()):
+        mu=m.get("model_utility",0.5); fq=m.get("forget_quality",0.5)
+        pl=m.get("privleak",0); es=m.get("extraction_strength",0.5)
+        vals = [min(max(mu,0),1), min(max(fq,0),1), min(max(1-abs(pl)/100,0),1), min(max(1-es,0),1)]
+        vals += vals[:1]
+        ax.plot(_ang, vals, "o-", linewidth=2.5, color=_colors[ci%8], label=lbl)
+        ax.fill(_ang, vals, alpha=0.12, color=_colors[ci%8])
+    ax.set_xticks(_ang[:-1]); ax.set_xticklabels(_labels4, size=11)
+    ax.set_ylim(0, 1); ax.grid(True, linestyle="--", alpha=0.5)
+    plt.legend(loc="upper right", bbox_to_anchor=(1.38, 1.15), fontsize=10)
+    plt.title("EXP_03 — Geometry-Aware Methods Comparison\n(WGA / UNDIAL / DPO)", size=12, pad=20)
+    plt.tight_layout()
+    plt.savefig("/kaggle/working/EXP_03_radar.png", dpi=150, bbox_inches="tight")
+    plt.close(); print("[VIZ] Radar chart → /kaggle/working/EXP_03_radar.png")
+
+    # Bar
+    _labs = list(metrics_map.keys()); _x = np.arange(len(_labs))
+    _comps = []
+    for m in metrics_map.values():
+        mu=m.get("model_utility",0); fq=m.get("forget_quality",0); pl=m.get("privleak",0); es=m.get("extraction_strength",0)
+        _comps.append(round(0.4*mu+0.4*fq-0.1*abs(pl)-0.1*es, 4))
+    fig, ax = plt.subplots(figsize=(max(7, len(_labs)*2), 4))
+    _bc = [_colors[i%8] for i in range(len(_labs))]
+    _bars = ax.bar(_x, _comps, color=_bc, width=0.5, edgecolor="black")
+    for b, v in zip(_bars, _comps):
+        ax.text(b.get_x()+b.get_width()/2., b.get_height()+0.004, f"{v:.4f}", ha="center", va="bottom", fontsize=10, fontweight="bold")
+    ax.set_xticks(_x); ax.set_xticklabels(_labs, fontsize=11)
+    ax.set_title("EXP_03 — Geometry-Aware Methods: Composite Score", fontweight="bold", fontsize=12)
+    ax.axhline(0, color="red", linewidth=0.8, linestyle="--", alpha=0.5)
+    ax.grid(axis="y", linestyle="--", alpha=0.4); plt.tight_layout()
+    plt.savefig("/kaggle/working/EXP_03_bar.png", dpi=150, bbox_inches="tight")
+    plt.close(); print("[VIZ] Bar chart → /kaggle/working/EXP_03_bar.png")
+except Exception as e:
+    print(f"[VIZ] Visualization skipped: {e}")
+
+_out_path = os.path.join(REPO_DIR, "saves", "eval", "EXP_03_results.json")
+os.makedirs(os.path.dirname(_out_path), exist_ok=True)
+with open(_out_path, "w") as f:
+    _json.dump(metrics_map, f, indent=2)
+print(f"[JSON] Results → {_out_path}")
+print("\n[EXP_03] Paper output complete.")
