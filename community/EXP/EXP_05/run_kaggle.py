@@ -42,8 +42,8 @@ MODEL_NAME = "Llama-3.2-1B-Instruct"
 FORGET_SPLIT = "forget10"
 RETAIN_SPLIT = "retain90"
 
-BATCH_SIZE = 4
-GRAD_ACCUM = 4
+BATCH_SIZE = 32   # H100 80GB — matches paper (A100, batch=32)
+GRAD_ACCUM = 1    # no accumulation needed at this batch size
 MAX_STEPS  = 200
 WARMUP_STEPS = 20           # Steps to accumulate forget/retain directions
 
@@ -303,11 +303,11 @@ forget_split={FORGET_SPLIT} \
 retain_split={RETAIN_SPLIT} \
 model.model_args.pretrained_model_name_or_path={model_path} \
 model.tokenizer_args.pretrained_model_name_or_path={model_path} \
-model.model_args.attn_implementation=eager \
+model.model_args.attn_implementation=flash_attention_2 \
 retain_logs_path=saves/eval/tofu_{MODEL_NAME}_{RETAIN_SPLIT}/TOFU_EVAL.json \
 trainer.args.per_device_train_batch_size={BATCH_SIZE} \
 trainer.args.gradient_accumulation_steps={GRAD_ACCUM} \
-trainer.args.optim=adamw_torch \
+trainer.args.optim=paged_adamw_32bit \
 +trainer.args.max_steps={MAX_STEPS} \
 +trainer.args.save_steps={MAX_STEPS} \
 trainer.args.save_strategy=steps \
@@ -325,7 +325,7 @@ task_name={task_name}_eval \
 model={MODEL_NAME} \
 model.model_args.pretrained_model_name_or_path={model_path} \
 model.tokenizer_args.pretrained_model_name_or_path={model_path} \
-model.model_args.attn_implementation=eager \
+model.model_args.attn_implementation=flash_attention_2 \
 +forget_split={FORGET_SPLIT} \
 +retain_split={RETAIN_SPLIT} \
 +retain_logs_path=saves/eval/tofu_{MODEL_NAME}_{RETAIN_SPLIT}/TOFU_EVAL.json""".replace('\n', ' \\' + '\n    ')

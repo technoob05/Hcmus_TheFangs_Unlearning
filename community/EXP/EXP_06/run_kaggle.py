@@ -51,8 +51,8 @@ RETAIN_SPLIT  = "retain90"
 N_CALIB_STEPS = 50     # Forward passes for calibration (no grad, fast)
 
 # Batch size still used by framework dataloader initialization
-BATCH_SIZE = 4
-GRAD_ACCUM = 4
+BATCH_SIZE = 32   # H100 80GB — matches paper (A100, batch=32)
+GRAD_ACCUM = 1    # no accumulation needed at this batch size
 MAX_STEPS  = 50        # MGFAA doesn't really train, but framework needs a value
 
 # ── Hyperparameter sweep ────────────────────────────────────
@@ -277,11 +277,11 @@ def build_unlearn_cmd(port, trainer, task_name, model_path, extra_overrides=""):
         f"retain_split={RETAIN_SPLIT} "
         f"model.model_args.pretrained_model_name_or_path={model_path} "
         f"model.tokenizer_args.pretrained_model_name_or_path={model_path} "
-        f"model.model_args.attn_implementation=eager "
+        f"model.model_args.attn_implementation=flash_attention_2 "
         f"retain_logs_path=saves/eval/tofu_{MODEL_NAME}_{RETAIN_SPLIT}/TOFU_EVAL.json "
         f"trainer.args.per_device_train_batch_size={BATCH_SIZE} "
         f"trainer.args.gradient_accumulation_steps={GRAD_ACCUM} "
-        f"trainer.args.optim=adamw_torch "
+        f"trainer.args.optim=paged_adamw_32bit "
         f"+trainer.args.max_steps={MAX_STEPS} "
         f"+trainer.args.save_steps={MAX_STEPS} "
         f"trainer.args.save_strategy=steps "
@@ -301,7 +301,7 @@ def build_eval_cmd(port, task_name, model_path):
         f"model={MODEL_NAME} "
         f"model.model_args.pretrained_model_name_or_path={model_path} "
         f"model.tokenizer_args.pretrained_model_name_or_path={model_path} "
-        f"model.model_args.attn_implementation=eager "
+        f"model.model_args.attn_implementation=flash_attention_2 "
         f"+forget_split={FORGET_SPLIT} "
         f"+retain_split={RETAIN_SPLIT} "
         f"+retain_logs_path=saves/eval/tofu_{MODEL_NAME}_{RETAIN_SPLIT}/TOFU_EVAL.json"
